@@ -18,8 +18,8 @@ Codex 每次调用模型都会在本地日志里记下 token 用量，但不会�
 把这个目录复制到你的 Codex 技能目录，然后新开一个对话：
 
 ```bash
-git clone https://github.com/<your-name>/codex-usage.git
-# Windows
+git clone https://github.com/cannotflyhorse/codex-usage.git
+# Windows（复制到技能目录）
 xcopy /E /I codex-usage "%USERPROFILE%\.codex\skills\codex-usage"
 # macOS / Linux
 cp -r codex-usage ~/.codex/skills/
