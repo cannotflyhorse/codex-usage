@@ -1,0 +1,38 @@
+{
+  "_note": "单价单位：美元 / 每 100 万 token。数值取自 DeepSeek 官方 API 价格表（api-docs.deepseek.com/quick_start/pricing，2026-09-17 抓取）。高峰时段为 UTC 周一至周五 01:00-04:00 与 06:00-10:00，即北京时间 09:00-12:00 与 14:00-18:00；其余时间为低谷价（半价）。",
+  "currency": "USD",
+  "usd_to_cny": 7.15,
+  "input_tokens_include_cached": true,
+  "peak_windows_utc": [
+    { "start": "01:00", "end": "04:00" },
+    { "start": "06:00", "end": "10:00" }
+  ],
+  "peak_weekdays_utc": [1, 2, 3, 4, 5],
+  "fallback_model": "deepseek-flash",
+  "models": {
+    "deepseek-flash": {
+      "label": "DeepSeek-V4.1-Flash",
+      "aliases": [
+        "deepseek-v4-flash",
+        "deepseek-v4-flash-vision-exp",
+        "deepseek-v4-flash[1M]",
+        "deepseek-flash",
+        "deepseek-chat",
+        "deepseek-reasoner"
+      ],
+      "peak": { "cache_hit": 0.006, "cache_miss": 0.3, "output": 1.2 },
+      "off_peak": { "cache_hit": 0.003, "cache_miss": 0.15, "output": 0.6 }
+    },
+    "deepseek-v4-pro": {
+      "label": "DeepSeek-V4-Pro-0813",
+      "aliases": [
+        "deepseek-v4-pro[1M]",
+        "deepseek-v4-pro-0813",
+        "deepseek-pro",
+        "deepseek-v4-pro"
+      ],
+      "peak": { "cache_hit": 0.044, "cache_miss": 1.32, "output": 3.96 },
+      "off_peak": { "cache_hit": 0.022, "cache_miss": 0.66, "output": 1.98 }
+    }
+  }
+}

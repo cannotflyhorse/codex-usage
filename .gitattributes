@@ -1,0 +1,20 @@
+# Windows 脚本必须以 CRLF 分发：cmd.exe 对 LF 换行的批处理支持不完整，
+# 直接下载 zip（GitHub 打包的是仓库内容）时尤其容易踩到。
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.vbs text eol=crlf
+
+# 其余文本统一 LF
+*.js text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.yaml text eol=lf
+*.gitattributes text eol=lf
+*.gitignore text eol=lf
+
+# 二进制
+*.zip binary
+*.png binary

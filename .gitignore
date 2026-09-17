@@ -1,0 +1,12 @@
+# 运行时产物
+assets/usage-report/logs/
+assets/usage-report/float-panel.state.json
+assets/usage-report/*.log
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+__pycache__/
+*.pyc

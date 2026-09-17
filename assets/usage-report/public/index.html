@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Codex 用量面板</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot" id="live-dot"></span>
+      <h1>Codex 用量面板</h1>
+    </div>
+    <div class="topbar-right">
+      <span class="muted" id="updated-at">等待数据…</span>
+      <div class="seg" id="currency-toggle">
+        <button data-cur="USD">USD</button>
+        <button data-cur="CNY" class="on">CNY</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="cards" id="cards"></section>
+
+    <section class="grid">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>当前对话</h2>
+          <span class="muted small" id="active-hint"></span>
+        </div>
+        <div id="active-session" class="active-session"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>每日用量与花费</h2>
+          <span class="muted small">柱=token，线=金额</span>
+        </div>
+        <div id="daily-chart" class="chart"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>实时调用流水</h2>
+        <span class="muted small">最近 40 次 API 调用</span>
+      </div>
+      <div class="table-wrap">
+        <table id="calls-table">
+          <thead>
+            <tr>
+              <th>时间</th>
+              <th>项目 / 会话</th>
+              <th class="num">输入</th>
+              <th class="num">缓存命中</th>
+              <th class="num">未命中</th>
+              <th class="num">输出</th>
+              <th class="num">合计</th>
+              <th class="num">命中率</th>
+              <th class="num">金额</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="grid">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>历史对话</h2>
+          <span class="muted small">点击查看逐轮明细</span>
+        </div>
+        <div id="sessions" class="sessions"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>会话明细</h2>
+          <span class="muted small" id="detail-title"></span>
+        </div>
+        <div id="session-detail" class="detail"><p class="muted">选择左侧会话查看逐轮明细。</p></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>单价表</h2>
+        <span class="muted small" id="pricing-note"></span>
+      </div>
+      <div id="pricing-table" class="table-wrap"></div>
+    </section>
+  </main>
+
+  <footer class="muted small" id="footer"></footer>
+  <script src="/app.js"></script>
+</body>
+</html>
