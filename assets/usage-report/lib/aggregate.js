@@ -2,6 +2,7 @@
 
 const path = require('node:path');
 const { resolveModel, costOfCall } = require('./pricing');
+const { profileAt } = require('./profiles');
 
 const EMPTY_TOTALS = () => ({
   calls: 0,
@@ -77,9 +78,14 @@ function dominantModel(session) {
   return best;
 }
 
-function summarizeSession(pricing, session) {
+/**
+ * history: deepseek-key-switch 的切换时间轴（已按时间升序）。
+ * 每一笔调用按发生时刻归属到当时生效的 key；覆盖不到的记 profile = null。
+ */
+function summarizeSession(pricing, session, history = []) {
   const fallbackModel = dominantModel(session);
   const calls = session.calls.map((call) => priceCall(pricing, call, session.turnModels[call.turnId] || fallbackModel));
+  for (const call of calls) call.profile = profileAt(history, call.atMs);
   const totals = finalize(calls.reduce(addInto, EMPTY_TOTALS()));
 
   const turnMap = new Map();
@@ -87,8 +93,11 @@ function summarizeSession(pricing, session) {
     const key = call.turnId || call.responseId || call.at;
     let turn = turnMap.get(key);
     if (!turn) {
-      turn = { turnId: key, rootTurnId: call.rootTurnId, startedAt: call.at, atMs: call.atMs, calls: 0, input: 0, cached: 0, output: 0, reasoning: 0, total: 0, cost: 0, tier: call.tier };
+      turn = { turnId: key, rootTurnId: call.rootTurnId, startedAt: call.at, atMs: call.atMs, calls: 0, input: 0, cached: 0, output: 0, reasoning: 0, total: 0, cost: 0, tier: call.tier, profile: call.profile };
       turnMap.set(key, turn);
+    } else if (turn.profile !== call.profile) {
+      // 一轮里跨了 key 就标成混合，不硬选一个
+      turn.profile = null;
     }
     turn.calls += 1;
     turn.input += call.input;
@@ -110,6 +119,15 @@ function summarizeSession(pricing, session) {
     models.set(call.modelKey, entry);
   }
 
+  const splitMap = new Map();
+  for (const call of calls) {
+    const bucketKey = call.profile || '';
+    const entry = splitMap.get(bucketKey) || { name: call.profile, ...EMPTY_TOTALS() };
+    addInto(entry, call);
+    splitMap.set(bucketKey, entry);
+  }
+  const profileSplit = [...splitMap.values()].map(finalize).sort((a, b) => b.cost - a.cost);
+
   const lastCall = calls[calls.length - 1];
   const cwd = session.cwd || null;
   return {
@@ -126,6 +144,7 @@ function summarizeSession(pricing, session) {
     models: [...models.values()].sort((a, b) => b.cost - a.cost),
     modelLabel: lastCall ? lastCall.modelLabel : null,
     totals,
+    profileSplit,
     turns: [...turnMap.values()].sort((a, b) => a.atMs - b.atMs),
     calls,
   };
@@ -148,8 +167,25 @@ function bucketBy(sessions, keyOf) {
   return buckets;
 }
 
-function buildSnapshot({ sessions, pricing, now = new Date(), recentCallLimit = 40 }) {
-  const enriched = sessions.map((s) => summarizeSession(pricing, s));
+/** 按 key 档案把一组调用分组汇总。profile 为 null 的归入 name: null（未归属）。 */
+function groupByProfile(calls) {
+  const buckets = new Map();
+  for (const call of calls) {
+    const bucketKey = call.profile || '';
+    let bucket = buckets.get(bucketKey);
+    if (!bucket) {
+      bucket = { name: call.profile, ...EMPTY_TOTALS() };
+      buckets.set(bucketKey, bucket);
+    }
+    addInto(bucket, call);
+  }
+  const out = new Map();
+  for (const [key, bucket] of buckets) out.set(key, finalize(bucket));
+  return out;
+}
+
+function buildSnapshot({ sessions, pricing, now = new Date(), recentCallLimit = 40, history = [] }) {
+  const enriched = sessions.map((s) => summarizeSession(pricing, s, history));
   enriched.sort((a, b) => b.lastActivityMs - a.lastActivityMs);
 
   const allCalls = enriched.flatMap((s) => s.calls).sort((a, b) => a.atMs - b.atMs);
@@ -174,6 +210,17 @@ function buildSnapshot({ sessions, pricing, now = new Date(), recentCallLimit = 
   }
   const byModel = [...byModelMap.values()].map(finalize).sort((a, b) => b.cost - a.cost);
 
+  const profileAll = groupByProfile(allCalls);
+  const profileToday = groupByProfile(todayCalls);
+  const profileMonth = groupByProfile(monthCalls);
+  const byProfile = [...profileAll.values()]
+    .map((row) => ({
+      ...row,
+      today: profileToday.get(row.name || '') || null,
+      month: profileMonth.get(row.name || '') || null,
+    }))
+    .sort((a, b) => b.cost - a.cost);
+
   const activeSession = enriched[0] || null;
   const recentCalls = allCalls.slice(-recentCallLimit).reverse().map((call) => {
     const owner = enriched.find((s) => s.calls.includes(call));
@@ -183,6 +230,7 @@ function buildSnapshot({ sessions, pricing, now = new Date(), recentCallLimit = 
       sessionId: owner ? owner.id : null,
       project: owner ? owner.project : null,
       turnId: call.turnId,
+      profile: call.profile,
       modelLabel: call.modelLabel,
       tier: call.tier,
       input: call.input,
@@ -201,6 +249,7 @@ function buildSnapshot({ sessions, pricing, now = new Date(), recentCallLimit = 
     totals: { all: totalsAll, today: totalsToday, month: totalsMonth },
     byDay,
     byModel,
+    byProfile,
     recentCalls,
     activeSessionId: activeSession ? activeSession.id : null,
     sessions: enriched.map((s) => ({
@@ -213,6 +262,7 @@ function buildSnapshot({ sessions, pricing, now = new Date(), recentCallLimit = 
       lastActivityAt: s.lastActivityAt,
       lastActivityMs: s.lastActivityMs,
       totals: s.totals,
+      profileSplit: s.profileSplit,
       turns: s.turns,
       callCount: s.calls.length,
     })),

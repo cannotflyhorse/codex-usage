@@ -10,3 +10,11 @@ Thumbs.db
 .DS_Store
 __pycache__/
 *.pyc
+
+# 密钥类文件永远不该进版本库（本仓库不产生这些文件，纯防御）
+*deepseek-keys*.json
+*deepseek-key-history*.jsonl
+*.env
+.env*
+*.pem
+*.key

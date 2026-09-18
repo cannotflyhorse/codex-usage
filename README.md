@@ -1,8 +1,8 @@
 # codex-usage
 
-统计和监控 Codex 对话的 token 用量、缓存命中数与花费。数据全部来自本机 Codex 会话日志，不联网、不上传。
+统计和监控 Codex 对话的 token 用量、缓存命中数与花费，并可按 DeepSeek API Key（公司／个人）拆分，附带各 key 的实时余额。用量数据全部来自本机 Codex 会话日志。
 
-A Codex skill that reports token usage, prompt-cache hits, and estimated cost per conversation, read straight from your local Codex session logs.
+A Codex skill that reports token usage, prompt-cache hits, and estimated cost per conversation — read straight from your local Codex session logs, optionally split by API key, with live account balances.
 
 ## 它解决什么问题
 
@@ -56,6 +56,34 @@ pwsh -File scripts/install.ps1 -Uninstall   # 卸载（会先备份改过的价�
 
 价格表里的 `input_tokens_include_cached` 决定 `input_tokens` 是否已包含缓存命中部分（OpenAI 风格包含，Anthropic 风格不包含），填错会让金额偏。
 
+## 按 API Key 拆分（公司与个人）
+
+会话日志里只有 token，**没有「这次调用用的是哪把 key」**，所以归属靠外部时间轴推导。本仓库只读这两个文件，不写：
+
+| 文件 | 作用 |
+|---|---|
+| `$CODEX_HOME/deepseek-keys.json` | 有哪几把 key（只用来显示掩码和查余额） |
+| `$CODEX_HOME/deepseek-key-history.jsonl` | 每次切换追加一条，把每笔调用落到当时生效的那把 key |
+
+这两个文件由配套技能 `deepseek-key-switch` 维护。没有它们时，按 key 的区域会自动隐藏，面板退化成全局统计，不会报错。
+
+三种数字口径不同，别混着看：
+
+| 数字 | 是什么 |
+|---|---|
+| 每把 key 的金额 | 本地日志 token × 单价算出的**估算值** |
+| 每把 key 的余额 | **查询那一刻的实时值**（缓存 60 秒），不是「这把 key 花了多少」 |
+| 未归属 | 时间轴没覆盖到的调用，不摊给任何一把 key |
+
+DeepSeek 没有账单或用量查询接口，所以「某把 key 这段时间花了多少」只能靠本地日志估算，对不上官方账单是正常的。
+
+## 隐私
+
+- 用量数据全部来自本机日志，不出本机。
+- **唯一的外发请求是查余额**：向 `api.deepseek.com/user/balance` 发一个 GET，且只在配置了 key 档案时才会发；不配 key 就完全不联网。
+- 本技能不保存、不打印 API Key，读档案时只取掩码（`sk-abcd...1234`）和 10 位指纹用于显示。
+- 面板服务只监听 `127.0.0.1`，不对局域网开放。
+
 ## 平台上能用到什么
 
 | 功能 | Windows | macOS / Linux |
@@ -75,7 +103,7 @@ codex-usage/
 ├─ scripts/install.ps1        安装 / 自启 / 卸载
 └─ assets/usage-report/       工具本体
    ├─ server.js               HTTP + SSE 服务
-   ├─ lib/                    日志扫描、聚合、计费
+   ├─ lib/                    日志扫描、聚合、计费、key 归属、余额查询
    ├─ public/                 网页面板（原生 JS + SVG，无依赖）
    ├─ float-panel.ps1         置顶悬浮窗（WPF）
    └─ *.cmd                   双击即用的启动器
@@ -86,6 +114,8 @@ codex-usage/
 - 金额是按标价估算，不含赠送额度、折扣、汇率波动，最终以提供商账单为准。
 - 人民币展示依赖 `pricing.json` 里的 `usd_to_cny` 汇率，只影响显示，不影响计价。
 - 悬浮窗只支持 Windows。
+- 按 key 的花费同样是估算值，且只在启用切换时间轴之后才准确；更早的用量归到时间轴起点对应的 key，或显示为「未归属」。历史起点可用 `deepseek-key-switch` 的 `seed` 回填。
+- 余额是查询那一刻的实时值，不是某个时间段的消费额。
 
 ## 许可证
 

@@ -7,9 +7,15 @@ const path = require('node:path');
 const { loadPricing, PRICING_PATH } = require('./lib/pricing');
 const { scanSessions, SESSION_DIRS, CODEX_HOME } = require('./lib/scanner');
 const { buildSnapshot } = require('./lib/aggregate');
+const { loadKeyStore, loadHistory, buildProfilesSection, setBalanceProvider } = require('./lib/profiles');
+const { refreshBalances, balanceSnapshot } = require('./lib/balance');
+
+// 余额来自实时接口，注入给 profiles 模块拼快照
+setBalanceProvider(balanceSnapshot);
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const DEFAULT_PORT = 8787;
+const BALANCE_REFRESH_MS = 60_000;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -37,11 +43,19 @@ function parseArgs(argv) {
 async function buildCurrentSnapshot() {
   const pricing = loadPricing();
   const sessions = await scanSessions();
-  return buildSnapshot({ sessions, pricing });
+  const keyStore = loadKeyStore(CODEX_HOME);
+  const history = loadHistory(CODEX_HOME);
+  const snapshot = buildSnapshot({ sessions, pricing, history: history.entries });
+  snapshot.profiles = buildProfilesSection(snapshot, keyStore, history);
+  return snapshot;
 }
 
 function signatureOf(snapshot) {
   const s = snapshot.sessions;
+  const profiles = snapshot.profiles || { items: [], current: null };
+  const balanceSig = profiles.items
+    .map((item) => `${item.name}:${item.balance && item.balance.ok ? Math.round(item.balance.total * 100) : 'x'}`)
+    .join(',');
   return [
     s.length,
     snapshot.totals.all.calls,
@@ -49,7 +63,20 @@ function signatureOf(snapshot) {
     Math.round(snapshot.totals.all.cost * 10000),
     snapshot.activeSessionId,
     s.reduce((acc, item) => acc + item.callCount, 0),
+    profiles.current,
+    balanceSig,
   ].join('|');
+}
+
+async function refreshAllBalances(options) {
+  try {
+    const keyStore = loadKeyStore(CODEX_HOME);
+    if (!keyStore.available) return false;
+    await refreshBalances(keyStore.profiles, options);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function main() {
@@ -65,6 +92,7 @@ async function main() {
   }
 
   if (args.once) {
+    await refreshAllBalances();
     const snapshot = await buildCurrentSnapshot();
     if (args.json) console.log(JSON.stringify(snapshot, null, 2));
     else printSummary(snapshot);
@@ -72,6 +100,7 @@ async function main() {
   }
 
   const clients = new Set();
+  await refreshAllBalances();
   let current = await buildCurrentSnapshot();
   let currentSignature = signatureOf(current);
   let pending = null;
@@ -174,6 +203,11 @@ async function main() {
   }
   setInterval(() => scheduleRefresh('poll'), 3000);
   setInterval(() => {
+    void refreshAllBalances().then((changed) => {
+      if (changed) scheduleRefresh('balance');
+    });
+  }, BALANCE_REFRESH_MS);
+  setInterval(() => {
     for (const res of clients) res.write(': ping\n\n');
   }, 20000);
 
@@ -209,6 +243,22 @@ function printSummary(snapshot) {
   console.log(`全部: ${all.calls} 次调用 | 输入 ${all.input.toLocaleString()} (缓存命中 ${(all.cacheHitRate * 100).toFixed(1)}%) | 输出 ${all.output.toLocaleString()} | 合计 ${all.total.toLocaleString()} tokens | ${usd(all.cost)}`);
   console.log(`今日: ${today.calls} 次调用 | 合计 ${today.total.toLocaleString()} tokens | ${usd(today.cost)}`);
   console.log(`本月: ${month.calls} 次调用 | 合计 ${month.total.toLocaleString()} tokens | ${usd(month.cost)}`);
+  const profiles = snapshot.profiles;
+  if (profiles && profiles.available) {
+    console.log('');
+    console.log(`按 key 区分（时间轴起点 ${profiles.historySince || '无'}，当前 ${profiles.current || '未知'}）：`);
+    for (const item of profiles.items) {
+      const todayCost = usd(item.today ? item.today.cost : 0);
+      const allCost = usd(item.totals ? item.totals.cost : 0);
+      const balance = item.balance && item.balance.ok
+        ? `${item.balance.currency} ${item.balance.total}`
+        : `余额未知${item.balance && item.balance.error ? `(${item.balance.error})` : ''}`;
+      console.log(`  ${item.active ? '*' : ' '} ${String(item.name).padEnd(10)} 今日 ${todayCost.padStart(11)}  累计 ${allCost.padStart(11)}  余额 ${balance}`);
+    }
+    if (profiles.unattributed) {
+      console.log(`    未归属      ${usd(profiles.unattributed.cost)}（${profiles.unattributed.calls} 次调用，时间轴未覆盖）`);
+    }
+  }
   console.log('');
   for (const session of snapshot.sessions.slice(0, 10)) {
     console.log(`${session.lastActivityAt}  ${session.project.padEnd(18)}  ${String(session.callCount).padStart(4)} 次  ${usd(session.totals.cost).padStart(10)}  缓存命中 ${(session.totals.cacheHitRate * 100).toFixed(1)}%`);

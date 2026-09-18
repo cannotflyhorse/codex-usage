@@ -109,6 +109,50 @@ function renderCards(snapshot) {
     .join('');
 }
 
+function balanceText(balance) {
+  if (!balance) return '—';
+  if (balance.lastGood) return balanceText(balance.lastGood);
+  if (!balance.ok) return `查询失败${balance.error ? `（${balance.error}）` : ''}`;
+  const symbol = balance.currency === 'CNY' ? '¥' : balance.currency === 'USD' ? '$' : '';
+  return `${symbol}${Number(balance.total).toFixed(2)}`;
+}
+
+// 按 API Key 拆开用量。归属来自 deepseek-key-switch 的切换时间轴，
+// 时间轴没覆盖到的调用单独列为「未归属」，不摊到任何一把 key 上。
+function renderProfiles(snapshot) {
+  const profiles = snapshot.profiles;
+  const note = el('profile-note');
+  const box = el('profiles');
+  if (!profiles || !profiles.available) {
+    note.textContent = '';
+    box.innerHTML = '<p class="empty">还没有登记 DeepSeek key 档案。用 deepseek-key-switch 技能登记后，这里会把用量按 key 拆开。</p>';
+    return;
+  }
+  note.textContent = profiles.historyAvailable
+    ? `当前生效 ${profiles.current || '未知'} · 时间轴自 ${fmtTime(profiles.historySince)} 起`
+    : '没有切换时间轴，全部调用会算作未归属';
+
+  const cards = profiles.items.map((item) => {
+    const today = item.today ? money(item.today.cost) : money(0);
+    const month = item.month ? money(item.month.cost) : money(0);
+    const all = item.totals ? money(item.totals.cost) : money(0);
+    return `<div class="card${item.active ? ' highlight' : ''}">
+      <div class="label"><span>${item.active ? '● ' : ''}${item.label || item.name}</span><span class="muted small">${item.mask}</span></div>
+      <div class="value">${today}</div>
+      <div class="sub">今日 · 本月 ${month} · 累计 ${all}<br />余额 ${balanceText(item.balance)}</div>
+    </div>`;
+  });
+
+  if (profiles.unattributed) {
+    cards.push(`<div class="card">
+      <div class="label"><span>未归属</span></div>
+      <div class="value">${money(profiles.unattributed.cost)}</div>
+      <div class="sub">${fmtInt(profiles.unattributed.calls)} 次调用，切换时间轴未覆盖</div>
+    </div>`);
+  }
+  box.innerHTML = cards.join('');
+}
+
 function renderActive(snapshot) {
   const active = snapshot.sessions.find((s) => s.id === snapshot.activeSessionId);
   el('active-hint').textContent = active ? `最近活动 ${ago(active.lastActivityAt)}` : '';
@@ -211,7 +255,7 @@ function renderCalls(snapshot) {
   const rows = snapshot.recentCalls;
   const tbody = el('calls-table').querySelector('tbody');
   if (rows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" class="empty">暂无调用记录。</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" class="empty">暂无调用记录。</td></tr>';
     return;
   }
   const newestKey = `${rows[0].atMs}|${rows[0].total}`;
@@ -227,6 +271,7 @@ function renderCalls(snapshot) {
       return `<tr class="${isFresh && index === 0 ? 'fresh' : ''}">
         <td>${fmtTime(call.at)} ${tier}</td>
         <td>${call.project || '—'}</td>
+        <td>${call.profile || '<span class="muted">未归属</span>'}</td>
         <td class="num">${fmtInt(call.input)}</td>
         <td class="num">${fmtInt(call.cached)}</td>
         <td class="num">${fmtInt(miss)}</td>
@@ -350,6 +395,7 @@ function render(snapshot) {
   state.snapshot = snapshot;
   state.lastUpdate = Date.now();
   renderCards(snapshot);
+  renderProfiles(snapshot);
   renderActive(snapshot);
   renderDailyChart(snapshot);
   renderCalls(snapshot);

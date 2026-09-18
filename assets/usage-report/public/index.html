@@ -24,6 +24,14 @@
   <main>
     <section class="cards" id="cards"></section>
 
+    <section class="panel">
+      <div class="panel-head">
+        <h2>按 API Key 区分</h2>
+        <span class="muted small" id="profile-note"></span>
+      </div>
+      <div id="profiles" class="cards"></div>
+    </section>
+
     <section class="grid">
       <div class="panel">
         <div class="panel-head">
@@ -53,6 +61,7 @@
             <tr>
               <th>时间</th>
               <th>项目 / 会话</th>
+              <th>Key</th>
               <th class="num">输入</th>
               <th class="num">缓存命中</th>
               <th class="num">未命中</th>

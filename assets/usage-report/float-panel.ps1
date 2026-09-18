@@ -90,6 +90,50 @@ function Format-Money([double]$usd, [string]$currency, [double]$rate) {
   return ('$' + $usd.ToString('0.00'))
 }
 
+function Format-Balance($balance, [string]$currency, [double]$rate) {
+  if ($null -eq $balance) { return '—' }
+  if ($balance.lastGood) { return (Format-Balance $balance.lastGood $currency $rate) }
+  if (-not $balance.ok) { return '查询失败' }
+  $symbol = switch ($balance.currency) { 'CNY' { '¥' } 'USD' { '$' } default { '' } }
+  return ($symbol + ([double]$balance.total).ToString('0.##'))
+}
+
+# 一行「档案名 · 金额 · 余额」。用 DockPanel 靠右停靠对齐，避免中英文混排的补位计算。
+function New-KeyRow([string]$Name, [double]$Cost, $Balance, [bool]$IsActive, [double]$Rate, [string]$Currency) {
+  $row = New-Object System.Windows.Controls.DockPanel
+  $row.Margin = New-Object System.Windows.Thickness 0, 2, 0, 0
+
+  $balanceText = New-Object System.Windows.Controls.TextBlock
+  $balanceText.Text = ('余 ' + (Format-Balance $Balance $Currency $Rate))
+  $balanceText.FontFamily = New-Object System.Windows.Media.FontFamily 'Consolas'
+  $balanceText.FontSize = 10.5
+  $balanceText.Foreground = New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromRgb(0x8B, 0x98, 0xA9))
+  $balanceText.VerticalAlignment = 'Center'
+  [System.Windows.Controls.DockPanel]::SetDock($balanceText, 'Right')
+
+  $todayText = New-Object System.Windows.Controls.TextBlock
+  $todayText.Text = (Format-Money $Cost $Currency $Rate)
+  $todayText.FontFamily = New-Object System.Windows.Media.FontFamily 'Consolas'
+  $todayText.FontSize = 10.5
+  $todayText.VerticalAlignment = 'Center'
+  $todayText.Margin = New-Object System.Windows.Thickness 0, 0, 9, 0
+  $todayText.Foreground = New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromRgb(0x6E, 0x7B, 0x8C))
+  [System.Windows.Controls.DockPanel]::SetDock($todayText, 'Right')
+
+  $nameText = New-Object System.Windows.Controls.TextBlock
+  $nameText.Text = $(if ($IsActive) { '● ' + $Name } else { '○ ' + $Name })
+  $nameText.FontSize = 10.5
+  $nameText.VerticalAlignment = 'Center'
+  $nameText.TextTrimming = 'CharacterEllipsis'
+  $color = if ($IsActive) { [System.Windows.Media.Color]::FromRgb(0xE6, 0xED, 0xF3) } else { [System.Windows.Media.Color]::FromRgb(0x8B, 0x98, 0xA9) }
+  $nameText.Foreground = New-Object System.Windows.Media.SolidColorBrush $color
+
+  $row.Children.Add($balanceText) | Out-Null
+  $row.Children.Add($todayText) | Out-Null
+  $row.Children.Add($nameText) | Out-Null
+  return $row
+}
+
 function Read-State {
   if (Test-Path $StatePath) {
     try { return Get-Content -Raw -Path $StatePath | ConvertFrom-Json } catch { }
@@ -145,7 +189,7 @@ if (-not $serverOnline) {
 
     <Border x:Name="RootCard" CornerRadius="10" Background="#00000000"
             BorderBrush="#3A2F81F7" BorderThickness="1" Padding="11,8,11,9">
-      <StackPanel x:Name="RootStack" Width="188">
+      <StackPanel x:Name="RootStack" Width="210">
 
         <DockPanel>
           <Ellipse x:Name="StatusDot" Width="7" Height="7" Fill="#3FB950" DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,7,0"/>
@@ -154,6 +198,8 @@ if (-not $serverOnline) {
           <TextBlock x:Name="FoldButton" Text="—" Tag="noDrag" DockPanel.Dock="Right" Foreground="#8B98A9" FontSize="11"
                      VerticalAlignment="Center" Cursor="Hand" Padding="5,0,9,0" ToolTip="折叠 / 展开"/>
           <TextBlock Text="Codex 用量" Foreground="#8B98A9" FontSize="11" VerticalAlignment="Center"/>
+          <TextBlock x:Name="KeyBadge" Text="" Foreground="#2F81F7" FontSize="11" VerticalAlignment="Center" Margin="5,0,0,0"
+                     TextTrimming="CharacterEllipsis"/>
         </DockPanel>
 
         <TextBlock x:Name="MiniLine" Text="—" Foreground="#E6EDF3" FontSize="12" Margin="0,5,0,0"
@@ -172,6 +218,8 @@ if (-not $serverOnline) {
 
           <Canvas x:Name="Spark" Height="20" Margin="0,7,0,0" ClipToBounds="True"/>
 
+          <StackPanel x:Name="KeyPanel" Margin="0,6,0,0"/>
+
           <TextBlock x:Name="FooterLine" Text="" Foreground="#6E7B8C" FontSize="10.5" Margin="0,6,0,0"
                      TextTrimming="CharacterEllipsis"/>
         </StackPanel>
@@ -186,7 +234,7 @@ $window = [System.Windows.Markup.XamlReader]::Load($reader)
 
 $ui = @{}
 foreach ($name in 'CardShadow', 'RootCard', 'RootStack', 'StatusDot', 'CloseButton', 'FoldButton', 'MiniLine',
-  'BodyPanel', 'SessionTokens', 'SessionCost', 'SessionSub', 'Spark', 'FooterLine') {
+  'BodyPanel', 'SessionTokens', 'SessionCost', 'SessionSub', 'Spark', 'KeyPanel', 'KeyBadge', 'FooterLine') {
   $ui[$name] = $window.FindName($name)
 }
 
@@ -245,6 +293,9 @@ function Update-Display {
     $ui.FooterLine.Text = $ServerUrl
     $ui.MiniLine.Text = '离线'
     $ui.Spark.Children.Clear()
+    $ui.KeyPanel.Children.Clear()
+    $ui.KeyPanel.Visibility = 'Collapsed'
+    $ui.KeyBadge.Text = ''
     $ui.RootCard.ToolTip = '未连接到用量服务，悬浮窗会每隔约 30 秒自动重试启动。'
     $script:offlineTicks++
     if (-not $NoAutoStart -and $script:offlineTicks -ge 6 -and ($script:offlineTicks % 15) -eq 6) {
@@ -303,7 +354,7 @@ function Update-Display {
     for ($i = $take - 1; $i -ge 0; $i--) { $series += [double]$calls[$i].total }
     $max = ($series | Measure-Object -Maximum).Maximum
     if ($max -le 0) { $max = 1 }
-    $canvasWidth = 188.0
+    $canvasWidth = 210.0
     $gap = 2.5
     $barWidth = [Math]::Max(4.0, ($canvasWidth - ($take - 1) * $gap) / $take)
     $sparkHeight = 20.0
@@ -327,6 +378,29 @@ function Update-Display {
       [System.Windows.Controls.Canvas]::SetTop($rect, $sparkHeight - $height)
       $ui.Spark.Children.Add($rect) | Out-Null
     }
+  }
+
+  # ---- 按 key 区分：顶部显示当前档案，下面每把 key 一行（今日花费 + 余额）----
+  $profiles = $snapshot.profiles
+  if ($profiles -and $profiles.available -and @($profiles.items).Count -gt 0) {
+    $ui.KeyPanel.Visibility = 'Visible'
+    $ui.KeyBadge.Text = $(if ($profiles.current) { '· ' + $profiles.current } else { '' })
+    $ui.KeyPanel.Children.Clear()
+    foreach ($item in @($profiles.items)) {
+      $displayName = $(if ($item.label) { [string]$item.label } else { [string]$item.name })
+      $todayCost = 0.0
+      if ($item.today) { $todayCost = [double]$item.today.cost }
+      $ui.KeyPanel.Children.Add((New-KeyRow -Name $displayName -Cost $todayCost -Balance $item.balance `
+            -IsActive ([bool]$item.active) -Rate $rate -Currency $appState.currency)) | Out-Null
+    }
+    if ($profiles.unattributed -and [double]$profiles.unattributed.cost -gt 0) {
+      $ui.KeyPanel.Children.Add((New-KeyRow -Name '未归属' -Cost ([double]$profiles.unattributed.cost) -Balance $null `
+            -IsActive $false -Rate $rate -Currency $appState.currency)) | Out-Null
+    }
+    $ui.KeyPanel.ToolTip = '每把 key 的数字是「今日花费」，绿色圆点是当前生效的档案。余额来自 DeepSeek 实时接口。'
+  } else {
+    $ui.KeyPanel.Visibility = 'Collapsed'
+    $ui.KeyBadge.Text = ''
   }
 }
 
